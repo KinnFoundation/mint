@@ -2,26 +2,13 @@
 "use strict";
 // -----------------------------------------------
 // Name: KINN Mint
-// Version: 0.0.1 - initial
+// Version: 0.0.2 - extend 
 // Requires Reach v0.1.11-rc7 (27cb9643) or later
 // ----------------------------------------------
 
-import {
-  State,
-  api,
-  view
-} from '@KinnFoundation/sale#sale-v0.1.11r4:interface.rsh';
+import { Params } from '@KinnFoundation/mint#mint-v0.1.11r0:interface.rsh'; 
 
-// TYPES
-
-export const Params = Object({
-  name: Bytes(32),
-  symbol: Bytes(8),
-  url: Bytes(96),
-  metadata: Bytes(32),
-  supply: UInt,
-  decimals: UInt,
-});
+import { State, api, view } from '@KinnFoundation/sale#sale-v0.1.11r4:interface.rsh';
 
 // CONTRACT
 
@@ -34,14 +21,14 @@ export const Participants = () => [
 export const Views = () => [View(view(State))];
 export const Api = () => [API(api)];
 export const App = (map) => {
-  const [{ amt, ttl }, [addr, _], [Manager], [v], [a], [e]] = map;
+  const [{ amt, ttl, tok0 }, [addr, _], [Manager], [v], [a], [e]] = map;
   Manager.only(() => {
     const { name, symbol, url, metadata, supply, decimals } = declassify(
       interact.getParams()
     );
   });
   Manager.publish(name, symbol, url, metadata, supply, decimals)
-    .pay(amt)
+    .pay([amt, [1, tok0]])
     .timeout(relativeTime(ttl), () => {
       Anybody.publish();
       commit();
@@ -62,6 +49,8 @@ export const App = (map) => {
     .define(() => {
       v.state.set(State.fromObject(s));
     })
+    .invariant(implies(!s.closed, balance(tok0) == 1))
+    .invariant(implies(s.closed, balance(tok0) == 0))
     .invariant(!token.destroyed())
     .invariant(implies(!s.closed, balance(token) == s.tokenAmount))
     .invariant(implies(s.closed, balance(token) == supply))
@@ -129,6 +118,7 @@ export const App = (map) => {
         (k) => {
           k(null);
           transfer(amt).to(addr);
+          transfer(1, tok0).to(this);
           return [
             {
               ...s,
