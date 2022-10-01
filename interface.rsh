@@ -2,25 +2,43 @@
 "use strict";
 // -----------------------------------------------
 // Name: KINN Mint
-// Version: 0.0.1 - initial
+// Version: 0.0.2 - use sale state and params
 // Requires Reach v0.1.11-rc7 (27cb9643) or later
 // ----------------------------------------------
 
 import {
-  State,
+  State as SaleState,
+  Params as SaleParams,
   api,
   view
-} from '@KinnFoundation/sale#sale-v0.1.11r4:interface.rsh';
+} from "@KinnFoundation/sale#sale-v0.1.11r8:interface.rsh";
 
 // TYPES
 
-export const Params = Object({
+export const MintState = Struct([
+  ["name", Bytes(32)],
+  ["symbol", Bytes(8)],
+  ["supply", UInt],
+  ["decimals", UInt],
+]);
+
+export const State = Struct([
+  ...Struct.fields(SaleState),
+  ...Struct.fields(MintState),
+]);
+
+export const MintParams = Object({
   name: Bytes(32),
   symbol: Bytes(8),
   url: Bytes(96),
   metadata: Bytes(32),
   supply: UInt,
   decimals: UInt,
+});
+
+export const Params = Object({
+  price: Object.fields(SaleParams).price,
+  ...Object.fields(MintParams),
 });
 
 // CONTRACT
@@ -36,11 +54,11 @@ export const Api = () => [API(api)];
 export const App = (map) => {
   const [{ amt, ttl }, [addr, _], [Manager], [v], [a], [e]] = map;
   Manager.only(() => {
-    const { name, symbol, url, metadata, supply, decimals } = declassify(
+    const { price, name, symbol, url, metadata, supply, decimals } = declassify(
       interact.getParams()
     );
   });
-  Manager.publish(name, symbol, url, metadata, supply, decimals)
+  Manager.publish(price, name, symbol, url, metadata, supply, decimals)
     .pay(amt)
     .timeout(relativeTime(ttl), () => {
       Anybody.publish();
@@ -52,20 +70,27 @@ export const App = (map) => {
   check(token.supply() === supply, "token has supply");
   e.tokenLaunch();
   const initialState = {
+    // base state
     manager: Manager,
+    closed: false,
+    // sale state
     token,
     tokenAmount: supply,
-    price: 3,
-    closed: false,
+    price,
+    // mint state
+    name,
+    symbol,
+    supply,
+    decimals,
   };
   const [s] = parallelReduce([initialState])
     .define(() => {
       v.state.set(State.fromObject(s));
     })
-    .invariant(!token.destroyed())
-    .invariant(implies(!s.closed, balance(token) == s.tokenAmount))
-    .invariant(implies(s.closed, balance(token) == supply))
-    .invariant(token.supply() == supply)
+    .invariant(!token.destroyed(), "token not destroyed")
+    .invariant(implies(!s.closed, balance(token) == s.tokenAmount), "token balance accurate after close")
+    .invariant(implies(s.closed, balance(token) == supply), "token balance accurate before close")
+    .invariant(token.supply() == supply, "token supply accurate")
     .invariant(balance() == 0, "balance accurate")
     // BALANCE
     .while(!s.closed)
@@ -125,10 +150,9 @@ export const App = (map) => {
     .api_(a.close, () => {
       check(s.tokenAmount == 0, "cannot close until all tokens are sold");
       return [
-        [amt, [supply, token]],
+        [0, [supply, token]],
         (k) => {
           k(null);
-          transfer(amt).to(addr);
           return [
             {
               ...s,
