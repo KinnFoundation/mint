@@ -1,8 +1,9 @@
 "reach 0.1";
 "use strict";
+
 // -----------------------------------------------
 // Name: KINN Mint
-// Version: 0.0.1 - initial
+// Version: 0.0.2 - split mint params
 // Requires Reach v0.1.11-rc7 (27cb9643) or later
 // ----------------------------------------------
 
@@ -10,17 +11,21 @@ import {
   State,
   api,
   view
-} from '@KinnFoundation/sale#sale-v0.1.11r4:interface.rsh';
+} from "@KinnFoundation/sale#sale-v0.1.11r4:interface.rsh";
 
 // TYPES
 
-export const Params = Object({
+export const MintParams = Object({
   name: Bytes(32),
   symbol: Bytes(8),
   url: Bytes(96),
   metadata: Bytes(32),
-  supply: UInt,
   decimals: UInt,
+});
+
+export const Params = Object({
+  ...Object.fields(MintParams),
+  supply: UInt,
 });
 
 // CONTRACT
